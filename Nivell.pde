@@ -51,7 +51,7 @@ void resetCaixes() {
   for (int f = 0; f < ROWS; f++) {
     for (int c = 0; c < COLS; c++) {
       if (grid[f][c] == BOX) {
-        caixes.add(new Crate(c*TILE_SIZE + TILE_SIZE/2, f*TILE_SIZE + TILE_SIZE/2, TILE_SIZE*0.4));
+        caixes.add(new Crate(c*TILE_SIZE + TILE_SIZE/2, f*TILE_SIZE + TILE_SIZE/2, TILE_SIZE * 0.5f));
       }
     }
   }
@@ -124,7 +124,7 @@ void dibuixarNivell(boolean pA, boolean pB, boolean pC) {
           rect(x+TILE_SIZE*0.2, y+TILE_SIZE*0.7, TILE_SIZE*0.6, TILE_SIZE*0.2, 4);
           break;
         case PLATE_C:
-          fill(pC ? #FFFF44 : #888800);
+          fill(pC ? #FFFF44 : #B4A818);
           rect(x+TILE_SIZE*0.2, y+TILE_SIZE*0.7, TILE_SIZE*0.6, TILE_SIZE*0.2, 4);
           break;
         case DOOR_A:
@@ -278,7 +278,10 @@ void activaAnimacioTrampoli(float px, float py) {
   int c = floor(px / TILE_SIZE);
   int f = floor(py / TILE_SIZE);
   if (f < 0 || f >= ROWS || c < 0 || c >= COLS) return;
-  if (grid[f][c] == TRAMPOLINE) trampoliAnim[f][c] = 1.0f;
+  if (grid[f][c] == TRAMPOLINE) {
+    trampoliAnim[f][c] = 1.0f;
+    reprodueixSoTrampoliSiCal();
+  }
 }
 
 void dibuixaTrampoli(float x, float y, int f, int c) {

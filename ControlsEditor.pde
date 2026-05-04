@@ -13,8 +13,11 @@ void mouseDragged() {
 }
 
 void keyPressed() {
-  if (key < 256) keys[key] = true;
-  if (keyCode < 256) keysCode[keyCode] = true;
+  boolean teclatJocBloquejat = !isEditor && victoriaActiva;
+  if (!teclatJocBloquejat) {
+    if (key < 256) keys[key] = true;
+    if (keyCode < 256) keysCode[keyCode] = true;
+  }
 
   if (isEditor) {
     if (key == 'p' || key == 'P') {
@@ -39,6 +42,7 @@ void keyPressed() {
       resetCaixes();
       gravPadPisat = false;
     } else {
+      victoriaActiva = false;
       restauraGridDesMemoria();
       gravPadPisat = false;
       resetCaixes();
@@ -49,8 +53,14 @@ void keyPressed() {
   }
   if (key == 'i' || key == 'I') mostrarGuia = !mostrarGuia;
 
-  if (!isEditor && key == ' ' && jugadorsAMeta() && NIVELLS != null && indexNivellActual < NIVELLS.length - 1) {
-    passarSeguentNivell();
+  if (!isEditor && NIVELLS != null && (key == 'r' || key == 'R')) {
+    reiniciaNivellActual();
+  }
+
+  if (teclatJocBloquejat) {
+    if (key == ' ' && NIVELLS != null && indexNivellActual < NIVELLS.length - 1) {
+      passarSeguentNivell();
+    }
   }
 }
 
@@ -139,15 +149,18 @@ void exportarNivell() {
 
 void verificarVictoria() {
   if (!jugadorsAMeta()) return;
-  fill(255);
-  textAlign(CENTER);
-  textSize(48);
-  text("VICTÒRIA!", width/2, height/4);
+  float yTitol = height * 0.24f;
+  float ySub = yTitol + 58f;
+  dibuixaTextAmbContorn("VICTÒRIA!", width * 0.5f, yTitol, CENTER, CENTER, 60, color(255, 238, 90), color(0, 0, 0), 12f);
   if (NIVELLS != null && indexNivellActual < NIVELLS.length - 1) {
-    textSize(20);
-    text("Prem ESPAI per al nivell " + (indexNivellActual + 2), width/2, height/4 + 55);
+    dibuixaTextAmbContorn(
+      "Prem ESPAI per al nivell " + (indexNivellActual + 2),
+      width * 0.5f, ySub, CENTER, TOP, 34, color(255, 255, 255), color(0, 0, 0), 9f
+    );
   } else {
-    textSize(22);
-    text("Has completat tots els nivells!", width/2, height/4 + 55);
+    dibuixaTextAmbContorn(
+      "Has completat tots els nivells!",
+      width * 0.5f, ySub, CENTER, TOP, 34, color(255, 255, 255), color(0, 0, 0), 9f
+    );
   }
 }

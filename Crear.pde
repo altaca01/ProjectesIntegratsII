@@ -142,12 +142,18 @@ class Crate {
   void display() {
     pushMatrix();
     translate(x, y);
-    fill(#8B5A2B);
-    stroke(#5C3A21);
-    strokeWeight(2);
-    rect(-r, -r, r*2, r*2, 4);
-    line(-r, -r, r, r);
-    line(r, -r, -r, r);
+    if (imgCaja != null && imgCaja.width > 0) {
+      imageMode(CENTER);
+      image(imgCaja, 0, 0);
+      imageMode(CORNER);
+    } else {
+      fill(#8B5A2B);
+      stroke(#5C3A21);
+      strokeWeight(2);
+      rect(-r, -r, r*2, r*2, 4);
+      line(-r, -r, r, r);
+      line(r, -r, -r, r);
+    }
     popMatrix();
   }
 }

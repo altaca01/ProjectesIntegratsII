@@ -7,8 +7,68 @@
  * - Trampolins: 'T' (impuls vertical).
  */
 
+import processing.sound.*;
+
 // --- RECURSOS GRÀFICS ---
 PImage imgArbust;
+/** Fons pixel art al joc (data/fons.png o fons.jpg); només es dibuixa a l’àrea jugable i fora de l’editor. */
+PImage imgFonsJoc;
+/** Gràfic de la caixa (data/caja.png o caja.jpg); només visual, mateixa mida que 2*r. */
+PImage imgCaja;
+
+// --- ÀUDIO (fitxers dins data/musica/ i data/SFX/) ---
+/** Volum (0 = silenci, 1 = màxim). Es reaplica cada frame (veure mantenirVolumMusica). */
+float ampMusicaFons = 0.25f;
+float ampSaltPare = 0.75f;
+float ampGravV1 = 1.0f;
+float ampTrampoli = 0.8f;
+float ampBoto = 0.35f;
+/** Velocitat boto.wav (1 = normal, 3 = tres vegades més ràpid). */
+float rateSoBoto = 2.5f;
+/** rate > 1 = to més agut: en tornar de gravetat invertida a natural (dir 1). En invertir, rate 1.0. */
+float rateSoGravTornANatural = 1.5f;
+/** Música nivell 1: amb gravetat invertida (dir != 1), rate < 1 = to més greu; amb dir 1, normal. */
+float rateMusicaGravInvertida = 0.85f;
+/** Reverb només amb grav invertida (processing.sound.Reverb): room, damp, wet ~0..1 (més wet = més “eco”). */
+float reverbMusicaRoom = 0.2f;
+float reverbMusicaDamp = 1f;
+float reverbMusicaWet = 0.5f;
+SoundFile musicaFonsNivell1;
+Reverb reverbMusicaGravInvertida;
+SoundFile soSaltPare;
+SoundFile soSaltNen;
+/** Volum SFX salt del fill (fletxa amunt). */
+float ampSaltNen = 1f;
+SoundFile soGravV1;
+SoundFile soTrampoli;
+SoundFile soBoto;
+SoundFile soVictoria;
+float ampVictoria = 1f;
+SoundFile soMovCaja;
+/** Volum SFX moviment caixa (pare empenta). */
+float ampMovCaja = 0.75f;
+int darrerFrameSoMovCaja = -100000;
+SoundFile soCaminarPare;
+SoundFile soCaminarFill;
+float ampCaminarPare = 2f;
+float ampCaminarFill = 2f;
+/** Pitch caminar.wav: pare més greu, fill més agut. */
+float rateSoCaminarPare = 1f;
+float rateSoCaminarFill = 3f;
+int darrerFrameSoCaminarPare = -100000;
+int darrerFrameSoCaminarFill = -100000;
+/** Mínim de frames entre passos (evita spam). */
+int pausaMinCaminarFrames = 16;
+/** Flanc plaques A (vermella), B (blava) i C (groga); es comparen després dels update(). */
+boolean abansPisPlacaA = false;
+boolean abansPisPlacaB = false;
+boolean abansPisPlacaC = false;
+/** Salts del pare en ràfega curta (frames): puja lleugerament el to amb rate(). */
+int rafegaSaltsPare = 0;
+int darrerFrameSaltPare = -100000;
+/** Trampolí: ràfega curta com el salt del pare (rate més alt). */
+int rafegaTrampoli = 0;
+int darrerFrameTrampoli = -100000;
 
 // --- CONFIGURACIÓ DE REIXETA ---
 float TILE_SIZE;
@@ -44,6 +104,10 @@ float[][] trampoliAnim;
 
 /** Índex del nivell actiu (0 = primer, 1 = segon, …). Les dades dels mapes són a Nivells.pde (NIVELLS). */
 int indexNivellActual = 0;
+/** Ambdós jugadors a la meta: SFX victòria, sense moviment fins ESPAI (següent nivell). */
+boolean victoriaActiva = false;
+/** Evita cridar rate() cada frame; es torna a aplicar quan canvia la gravetat. */
+float rateMusicaFonsUltimAplicat = -999f;
 
 void settings() {
   fullScreen();
@@ -55,6 +119,41 @@ void setup() {
   ROWS = floor(((float)height / 2.0) / TILE_SIZE);
   grid = new int[ROWS][COLS];
   imgArbust = loadImage("Arbust_002.png");
+  imgFonsJoc = loadImage("fons.png");
+  if (imgFonsJoc == null || imgFonsJoc.width < 1) {
+    imgFonsJoc = loadImage("fons.jpg");
+  }
+  // Un sol resize a la mida del joc: image() escalant cada frame amb PNG gros va molt lent.
+  if (imatgeFonsJocCarregada()) {
+    int altFons = max(1, (int) (ROWS * TILE_SIZE));
+    imgFonsJoc.resize(width, altFons);
+  }
+
+  imgCaja = loadImage("caja.png");
+  if (imgCaja == null || imgCaja.width < 1) {
+    imgCaja = loadImage("caja.jpg");
+  }
+  if (imgCaja != null && imgCaja.width > 0) {
+    int midaCajaPx = max(1, (int) TILE_SIZE);
+    imgCaja.resize(midaCajaPx, midaCajaPx);
+  }
+
+  // Música: loop(rate, amp) i després amp() — la Sound de Processing torna a posar guany ~1 dins loop().
+  musicaFonsNivell1 = new SoundFile(this, "musica/nivel1.wav");
+  musicaFonsNivell1.loop(1.0f, ampMusicaFons);
+  mantenirVolumMusica();
+  reverbMusicaGravInvertida = new Reverb(this);
+
+  soSaltPare = new SoundFile(this, "SFX/salt_pare.wav");
+  soSaltNen = new SoundFile(this, "SFX/salt_nen.wav");
+  soGravV1 = new SoundFile(this, "SFX/grav_v1.wav");
+  soTrampoli = new SoundFile(this, "SFX/trampoli.wav");
+  soBoto = new SoundFile(this, "SFX/boto.wav");
+  soVictoria = new SoundFile(this, "SFX/victoria.wav");
+  soMovCaja = new SoundFile(this, "SFX/mov_caja.wav");
+  soCaminarPare = new SoundFile(this, "SFX/caminar.wav");
+  soCaminarFill = new SoundFile(this, "SFX/caminar.wav");
+
   indexNivellActual = 0;
   gridMemoriaJoc = new int[ROWS][COLS];
   trampoliAnim = new float[ROWS][COLS];
@@ -64,10 +163,144 @@ void setup() {
   resetCaixes();
 }
 
+/** Salt del pare amb W: SFX; el to puja una mica si salta diverses vegades seguides (rate). */
+void reprodueixSoSaltPareSiCal() {
+  if (isEditor || soSaltPare == null) return;
+  int dt = frameCount - darrerFrameSaltPare;
+  if (dt < 28) {
+    rafegaSaltsPare = min(rafegaSaltsPare + 1, 8);
+  } else {
+    rafegaSaltsPare = 0;
+  }
+  darrerFrameSaltPare = frameCount;
+  float elevacioTo = min(0.18f, rafegaSaltsPare * 0.028f);
+  float r = 1.0f + elevacioTo;
+  soSaltPare.play(r, ampSaltPare);
+  soSaltPare.amp(ampSaltPare);
+}
+
+void reprodueixSoSaltNenSiCal() {
+  if (isEditor || soSaltNen == null) return;
+  soSaltNen.play(1.0f, ampSaltNen);
+  soSaltNen.amp(ampSaltNen);
+}
+
+void reprodueixSoTrampoliSiCal() {
+  if (isEditor || soTrampoli == null) return;
+  int dt = frameCount - darrerFrameTrampoli;
+  if (dt < 28) {
+    rafegaTrampoli = min(rafegaTrampoli + 1, 8);
+  } else {
+    rafegaTrampoli = 0;
+  }
+  darrerFrameTrampoli = frameCount;
+  float elevacioTo = min(0.18f, rafegaTrampoli * 0.028f);
+  float r = 1.0f + elevacioTo;
+  soTrampoli.play(r, ampTrampoli);
+  soTrampoli.amp(ampTrampoli);
+}
+
+void reprodueixSoBotoPlacaSiCal() {
+  if (isEditor || soBoto == null) return;
+  if (soBoto.isPlaying()) soBoto.stop();
+  soBoto.amp(ampBoto);
+  soBoto.play(rateSoBoto, ampBoto);
+  soBoto.amp(ampBoto);
+}
+
+/** Pare empenta una caixa lateralment (dx real aplicat a la caixa). Mateix ritme que caminar (pausaMinCaminarFrames). */
+void notificaSoMovCajaPerEmpentaPare(float dxEmpenta) {
+  if (isEditor || soMovCaja == null) return;
+  if (abs(dxEmpenta) < 0.02f) return;
+  if (frameCount - darrerFrameSoMovCaja < pausaMinCaminarFrames) return;
+  darrerFrameSoMovCaja = frameCount;
+  // Sense stop(), diversos play() solapats sumen volum; el motor també pot reaplicar guany alt a cada play().
+  if (soMovCaja.isPlaying()) soMovCaja.stop();
+  soMovCaja.amp(ampMovCaja);
+  soMovCaja.play(1.0f, ampMovCaja);
+  soMovCaja.amp(ampMovCaja);
+}
+
+void reprodueixSoCaminarPareSiCal() {
+  if (isEditor || soCaminarPare == null) return;
+  if (frameCount - darrerFrameSoCaminarPare < pausaMinCaminarFrames) return;
+  darrerFrameSoCaminarPare = frameCount;
+  soCaminarPare.play(rateSoCaminarPare, ampCaminarPare);
+  soCaminarPare.amp(ampCaminarPare);
+}
+
+void reprodueixSoCaminarFillSiCal() {
+  if (isEditor || soCaminarFill == null) return;
+  if (frameCount - darrerFrameSoCaminarFill < pausaMinCaminarFrames) return;
+  darrerFrameSoCaminarFill = frameCount;
+  soCaminarFill.play(rateSoCaminarFill, ampCaminarFill);
+  soCaminarFill.amp(ampCaminarFill);
+}
+
+void reprodueixSoGravV1SiCal(boolean gravetatNaturalAbansDelCanvi) {
+  if (isEditor || soGravV1 == null) return;
+  float r = gravetatNaturalAbansDelCanvi ? 1.0f : rateSoGravTornANatural;
+  soGravV1.play(r, ampGravV1);
+  soGravV1.amp(ampGravV1);
+}
+
+void reprodueixSoVictoriaSiCal() {
+  if (isEditor || soVictoria == null) return;
+  if (soVictoria.isPlaying()) soVictoria.stop();
+  soVictoria.amp(ampVictoria);
+  soVictoria.play(1.0f, ampVictoria);
+  soVictoria.amp(ampVictoria);
+}
+
+boolean gravetatBloquejadaPerSoGrav() {
+  return !isEditor && soGravV1 != null && soGravV1.isPlaying();
+}
+
+/** Bug Processing Sound: després d’arrencar play/loop el motor reaplica amp intern 1; cal amp() de nou (i cada frame per la música). */
+void mantenirVolumMusica() {
+  if (musicaFonsNivell1 != null) musicaFonsNivell1.amp(ampMusicaFons);
+}
+
+void actualitzaRateMusicaSegonsGravetat() {
+  if (musicaFonsNivell1 == null) return;
+  float r = (dirGravetat == 1) ? 1.0f : rateMusicaGravInvertida;
+  if (r == rateMusicaFonsUltimAplicat) return;
+  rateMusicaFonsUltimAplicat = r;
+  musicaFonsNivell1.rate(r);
+  mantenirVolumMusica();
+}
+
+void paraEfecteReverbMusicaSiCal() {
+  if (reverbMusicaGravInvertida != null && reverbMusicaGravInvertida.isProcessing()) {
+    reverbMusicaGravInvertida.stop();
+  }
+}
+
+/** Amb grav invertida: reverb (eco/espai). Només un Effect per SoundFile a la llibreria Sound. */
+void actualitzaEfecteMusicaSegonsGravetat() {
+  if (musicaFonsNivell1 == null || reverbMusicaGravInvertida == null) return;
+  if (dirGravetat != 1) {
+    if (!reverbMusicaGravInvertida.isProcessing()) {
+      reverbMusicaGravInvertida.set(reverbMusicaRoom, reverbMusicaDamp, reverbMusicaWet);
+      reverbMusicaGravInvertida.process(musicaFonsNivell1);
+      mantenirVolumMusica();
+    }
+  } else {
+    paraEfecteReverbMusicaSiCal();
+  }
+}
+
 void draw() {
   background(10);
-  dibuixaCelDegradat();
-  dibuixaDecoracioFons();
+  mantenirVolumMusica();
+  actualitzaRateMusicaSegonsGravetat();
+  actualitzaEfecteMusicaSegonsGravetat();
+  if (!isEditor && imatgeFonsJocCarregada()) {
+    dibuixaFonsImatgeJoc();
+  } else {
+    dibuixaCelDegradat();
+    dibuixaDecoracioFons();
+  }
 
   boolean pA = estaPisada(PLATE_A);
   boolean pB = estaPisada(PLATE_B);
@@ -75,9 +308,11 @@ void draw() {
 
   boolean pisantGrav = isEditor ? estaPisada(GRAV_FLIP) : interruptorsGravPisats();
   if (pisantGrav) {
-    if (!gravPadPisat) {
+    if (!gravPadPisat && !gravetatBloquejadaPerSoGrav()) {
+      boolean gravNatural = (dirGravetat == 1);
       dirGravetat = -dirGravetat;
       gravPadPisat = true;
+      reprodueixSoGravV1SiCal(gravNatural);
     }
   } else {
     gravPadPisat = false;
@@ -87,11 +322,39 @@ void draw() {
   dibuixarNivell(pA, pB, pC);
 
   if (!isEditor) {
-    for (InterruptorGrav ig : interruptorsGrav) ig.update(pA, pB, pC);
-    for (Crate c : caixes) c.update(pA, pB, pC);
-    pare.update(pA, pB, pC, null);
-    fill.update(pA, pB, pC, pare);
+    if (!victoriaActiva) {
+      for (InterruptorGrav ig : interruptorsGrav) ig.update(pA, pB, pC);
+      for (Crate c : caixes) c.update(pA, pB, pC);
+      pare.update(pA, pB, pC, null);
+      fill.update(pA, pB, pC, pare);
+      if (jugadorsAMeta()) {
+        victoriaActiva = true;
+        reprodueixSoVictoriaSiCal();
+        pare.vx = pare.vy = 0;
+        fill.vx = fill.vy = 0;
+        for (int i = 0; i < 256; i++) {
+          keys[i] = false;
+          keysCode[i] = false;
+        }
+      }
+    } else {
+      pare.vx = pare.vy = 0;
+      fill.vx = fill.vy = 0;
+    }
     verificarVictoria();
+    boolean pAFi = estaPisada(PLATE_A);
+    boolean pBFi = estaPisada(PLATE_B);
+    boolean pCFi = estaPisada(PLATE_C);
+    if (pAFi && !abansPisPlacaA) reprodueixSoBotoPlacaSiCal();
+    if (pBFi && !abansPisPlacaB) reprodueixSoBotoPlacaSiCal();
+    if (pCFi && !abansPisPlacaC) reprodueixSoBotoPlacaSiCal();
+    abansPisPlacaA = pAFi;
+    abansPisPlacaB = pBFi;
+    abansPisPlacaC = pCFi;
+  } else {
+    abansPisPlacaA = estaPisada(PLATE_A);
+    abansPisPlacaB = estaPisada(PLATE_B);
+    abansPisPlacaC = estaPisada(PLATE_C);
   }
 
   if (!isEditor) {
@@ -105,11 +368,58 @@ void draw() {
     dibuixarIndicadorEditor();
     if (mostrarGuia) dibuixarGuiaEditor();
   } else if (NIVELLS != null) {
-    fill(255);
-    textAlign(RIGHT, TOP);
-    textSize(16);
-    text("Nivell " + (indexNivellActual + 1) + " / " + NIVELLS.length, width - 16, 12);
+    String sNiv = "Nivell " + (indexNivellActual + 1) + " / " + NIVELLS.length;
+    dibuixaTextAmbContorn(sNiv, width - 18, 18, RIGHT, TOP, 30, color(255, 252, 248), color(0, 0, 0), 5.2f);
   }
+}
+
+/**
+ * Contorn gruixut segur: el text() amb stroke a Processing sovint no es veu;
+ * es dibuixa el mateix text moltes vegades amb fill fosc desplaçat i després el fill clar al centre.
+ */
+void dibuixaTextAmbContorn(String txt, float x, float y, int ha, int va, float mida, color f, color st, float sw) {
+  pushStyle();
+  textAlign(ha, va);
+  textSize(mida);
+  textLeading(mida * 1.15f);
+  noStroke();
+  color contorn = lerpColor(st, color(0, 0, 0), 0.96f);
+  fill(contorn);
+
+  float[] radii = { max(3.5f, sw * 1.1f), max(2.4f, sw * 0.72f), max(1.4f, sw * 0.38f) };
+  int[] counts = { 22, 16, 12 };
+  for (int p = 0; p < radii.length; p++) {
+    float rad = radii[p];
+    int nn = counts[p];
+    for (int i = 0; i < nn; i++) {
+      float ang = TWO_PI * i / nn;
+      text(txt, x + cos(ang) * rad, y + sin(ang) * rad);
+    }
+  }
+  float d = max(2.8f, sw * 0.88f);
+  text(txt, x - d, y);
+  text(txt, x + d, y);
+  text(txt, x, y - d);
+  text(txt, x, y + d);
+  text(txt, x - d * 0.72f, y - d * 0.72f);
+  text(txt, x + d * 0.72f, y - d * 0.72f);
+  text(txt, x - d * 0.72f, y + d * 0.72f);
+  text(txt, x + d * 0.72f, y + d * 0.72f);
+
+  fill(f);
+  text(txt, x, y);
+  popStyle();
+}
+
+boolean imatgeFonsJocCarregada() {
+  return imgFonsJoc != null && imgFonsJoc.width > 0;
+}
+
+/** Fons d’imatge només a la meitat superior jugable (ja redimensionada al setup). */
+void dibuixaFonsImatgeJoc() {
+  if (!imatgeFonsJocCarregada()) return;
+  imageMode(CORNER);
+  image(imgFonsJoc, 0, 0);
 }
 
 /** Cel degradat dins l'àrea de joc (amplada = finestra, alçada = ROWS * TILE_SIZE). */
@@ -259,12 +569,14 @@ void reiniciaTrampolinsAnim() {
   }
 }
 
-void passarSeguentNivell() {
-  if (NIVELLS == null || indexNivellActual >= NIVELLS.length - 1) return;
-  indexNivellActual++;
-  carregarNivellDesIndex(indexNivellActual);
+/** Després de carregar el grid d'un nivell: interruptors, caixes, gravetat i teclat. */
+void aplicarFisicaInicialDespresCarregarNivell() {
+  victoriaActiva = false;
   dirGravetat = 1;
   gravPadPisat = false;
+  rateMusicaFonsUltimAplicat = -999f;
+  paraEfecteReverbMusicaSiCal();
+  if (soGravV1 != null && soGravV1.isPlaying()) soGravV1.stop();
   interruptorsGrav.clear();
   instanciaInterruptorsDesDeGrid();
   resetCaixes();
@@ -274,4 +586,21 @@ void passarSeguentNivell() {
     keysCode[i] = false;
   }
   aplicarSpawnDesIndex(indexNivellActual);
+  abansPisPlacaA = estaPisada(PLATE_A);
+  abansPisPlacaB = estaPisada(PLATE_B);
+  abansPisPlacaC = estaPisada(PLATE_C);
+}
+
+/** Torna a començar el nivell actual (mateix índex), no el primer nivell. */
+void reiniciaNivellActual() {
+  if (isEditor || NIVELLS == null) return;
+  carregarNivellDesIndex(indexNivellActual);
+  aplicarFisicaInicialDespresCarregarNivell();
+}
+
+void passarSeguentNivell() {
+  if (NIVELLS == null || indexNivellActual >= NIVELLS.length - 1) return;
+  indexNivellActual++;
+  carregarNivellDesIndex(indexNivellActual);
+  aplicarFisicaInicialDespresCarregarNivell();
 }

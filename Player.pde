@@ -26,6 +26,7 @@ class Player {
       if ((keys['w'] || keys['W']) && aTerra) {
         vy = -jump * dirGravetat;
         aTerra = false;
+        reprodueixSoSaltPareSiCal();
       }
     } else {
       if (keysCode[LEFT]) {
@@ -41,6 +42,7 @@ class Player {
         vy = -jump * dirGravetat;
         aTerra = false;
         enganxatAlPare = false;
+        reprodueixSoSaltNenSiCal();
       }
     }
 
@@ -119,6 +121,16 @@ class Player {
     } else {
       aTerra = true;
     }
+
+    if (!isEditor && aTerra) {
+      float umbralVx = TILE_SIZE * 0.0025f;
+      if (!esFill && (keys['a'] || keys['A'] || keys['d'] || keys['D']) && abs(vx) > umbralVx) {
+        reprodueixSoCaminarPareSiCal();
+      } else if (esFill && (keysCode[LEFT] || keysCode[RIGHT])) {
+        boolean mouCamiFill = abs(vx) > umbralVx || (enganxatAlPare && esMouLateralment);
+        if (mouCamiFill) reprodueixSoCaminarFillSiCal();
+      }
+    }
   }
 
   boolean pucMoure(float nx, float ny, boolean pA, boolean pB, boolean pC) {
@@ -135,6 +147,7 @@ class Player {
         float pushX = nx - x;
         if (c.pucMoure(c.x + pushX, c.y, pA, pB, pC)) {
           c.x += pushX;
+          notificaSoMovCajaPerEmpentaPare(pushX);
           for (Crate a : caixes) {
             if (a != c && a.estaSobre(c)) {
               a.mourePerSuport(pushX, 0, pA, pB, pC);
